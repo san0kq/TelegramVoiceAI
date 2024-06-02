@@ -12,8 +12,10 @@ class Settings(BaseSettings):
     openai_api_key: str
     assistant_id: str
     redis_password: str
+    redis_user: str = 'default'
     redis_host: str
     redis_port: str
+    redis_external_port: str = '6379'
 
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8')
 

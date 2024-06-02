@@ -7,6 +7,7 @@ from config import settings
 base_redis_config = dict(
     host=settings.redis_host,
     port=int(settings.redis_port),
+    username=settings.redis_user,
     password=settings.redis_password
 )
 
