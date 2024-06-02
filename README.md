@@ -1,4 +1,3 @@
-```markdown
 # J.A.R.V.I.S - Telegram Bot
 
 J.A.R.V.I.S is a Telegram bot powered by artificial intelligence, humorously attributed to Tony Stark (just kidding, it's actually just ChatGPT 4o). Its purpose is to assist users with any questions. Currently, it can recognize users' voice messages and respond accordingly.
