@@ -23,4 +23,4 @@ COPY ./src /code
 
 EXPOSE 8000
 
-CMD ["/bin/sh", "-c", "python app.py"]
+CMD alembic revision --autogenerate -m "Initial migration" && alembic upgrade head && python3 app.py
