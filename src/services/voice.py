@@ -3,11 +3,8 @@ from pathlib import Path
 from typing import BinaryIO, Optional
 from logging import getLogger
 
-from openai import AsyncOpenAI
-
 from config import settings
-from data_access.redis import async_redis_client
-from data_access.dal import AsyncRedisThreadsDAL
+from services.api_services import openai_client
 from services.exceptions import (
     VoiceToTextError,
     GetResponseError,
@@ -17,9 +14,7 @@ from services.exceptions import (
 
 logger = getLogger(__name__)
 
-openai_client = AsyncOpenAI(
-    api_key=settings.openai_api_key,
-)
+
 
 async def voice_to_text(voice_file: BinaryIO) -> Optional[str]:
     """Converts voice file to text using OpenAI API.
@@ -53,7 +48,7 @@ async def voice_to_text(voice_file: BinaryIO) -> Optional[str]:
         )
 
 
-async def get_answer(text: str, user_id: int) -> Optional[str]:
+async def get_answer(text: str, user_id: int, thread_id: Optional[str]) -> tuple[Optional[str], str]:
     """Get response from OpenAI API based on user's text.
 
     Args:
@@ -69,57 +64,39 @@ async def get_answer(text: str, user_id: int) -> Optional[str]:
 
     """
     try:
-        async with async_redis_client as client:
-            redis_dal = AsyncRedisThreadsDAL(redis_client=client)
 
-            if not await redis_dal.check_exists(user_id=user_id):
-                '''
-                if the user is not in the database,
-                it means we create a new thread with them
-                '''
-                empty_thread = await openai_client.beta.threads.create()
-                await redis_dal.create_thread(
-                    user_id=user_id,
-                    thread_id=empty_thread.id
-                )
-                thread_id = empty_thread.id
-                await openai_client.beta.threads.messages.create(
-                    thread_id=thread_id,
-                    role='user',
-                    content=text
-                )
-            else:
-                '''
-                if the user is in the database, it means they have already
-                interacted with AI, and we retrieve an existing thread to
-                continue the conversation
-                '''
-                thread_id = await redis_dal.get_thread(user_id=user_id)
-                thread_id = thread_id.decode('utf-8')
-                await openai_client.beta.threads.messages.create(
-                    thread_id=thread_id,
-                    role='user',
-                    content=text
-                )
-            
-            await openai_client.beta.threads.runs.create_and_poll(
+        if not thread_id:
+            empty_thread = await openai_client.beta.threads.create()
+            thread_id = empty_thread.id
+            await openai_client.beta.threads.messages.create(
                 thread_id=thread_id,
-                assistant_id=settings.assistant_id
+                role='user',
+                content=text
             )
-            
+        else:
+            await openai_client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role='user',
+                content=text
+            )
+        
+        run = await openai_client.beta.threads.runs.create_and_poll(
+            thread_id=thread_id,
+            assistant_id=settings.assistant_id
+        )
 
-            thread_messages = await openai_client.beta.threads.messages.list(
-                thread_id=thread_id
+        thread_messages = await openai_client.beta.threads.messages.list(
+            thread_id=thread_id
+        )
+
+        last_message = await openai_client.beta.threads.messages.retrieve(
+            message_id=thread_messages.first_id,
+            thread_id=thread_id,
             )
 
-            last_message = await openai_client.beta.threads.messages.retrieve(
-                message_id=thread_messages.first_id,
-                thread_id=thread_id,
-                )
-            
-            text = last_message.content[0].text.value
-            logger.info('Response received. User: %s, Text: %s', user_id, text)
-            return text
+        text = last_message.content[0].text.value
+        logger.info('Response received. User: %s, Text: %s', user_id, text)
+        return text, thread_id
     
     except Exception as e:
         logger.error('Error receiving response - %s', e)
@@ -155,3 +132,25 @@ async def text_to_voice(text: str) -> Optional[str]:
     except Exception as e:
         logger.error('Error converting text to voice - %s', e)
         raise TextToVoiceError('Error converting text to voice')
+
+
+async def get_key_value(text: str) -> Optional[str]:
+    run = await openai_client.beta.threads.create_and_run_poll(
+        assistant_id=settings.value_identifier_assistant_id,
+        thread={
+            "messages": [
+                {"role": "user", "content": text}
+            ]
+        }
+    )
+    key_value = None
+
+
+    if run.status == 'requires_action':
+        for tool in run.required_action.submit_tool_outputs.tool_calls:
+            if tool.function.name == 'save_value':
+                key_value = eval(tool.function.arguments)['value']
+
+    await openai_client.beta.threads.delete(thread_id=run.thread_id)
+
+    return key_value

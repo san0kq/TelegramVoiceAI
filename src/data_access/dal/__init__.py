@@ -1,3 +1,3 @@
-from .threads import AsyncRedisThreadsDAL
+from .user import UserDAL
 
-__all__ = ['AsyncRedisThreadsDAL']
+__all__ = ['UserDAL']

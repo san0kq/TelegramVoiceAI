@@ -11,6 +11,9 @@ aiogram = "^3.6.0"
 pydantic-settings = "^2.2.1"
 openai = "^1.30.5"
 redis = "^5.0.4"
+alembic = "^1.13.1"
+asyncpg = "^0.29.0"
+amplitude-analytics = "^1.1.4"
 
 
 [build-system]
